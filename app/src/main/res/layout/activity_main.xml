@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<GridLayout xmlns:android="http://schemas.android.com/apk/res/android"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:columnCount="1"
+            android:orientation="vertical">
+
+    <include
+        layout="@layout/toolbar_main"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="0">
+    </include>
+
+    <ImageView
+        android:id="@+id/mainA_GR_IV_celebImage"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="1"
+        android:layout_gravity="fill"
+        android:layout_marginTop="25dp"
+        android:layout_marginBottom="25dp">
+    </ImageView>
+
+    <Button
+        android:id="@+id/mainA_GR_BTN_0"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="2"
+        android:tag="0">
+    </Button>
+
+    <Button
+        android:id="@+id/mainA_GR_BTN_1"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="3"
+        android:tag="1">
+    </Button>
+
+    <Button
+        android:id="@+id/mainA_GR_BTN_2"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="4"
+        android:tag="2">
+    </Button>
+
+    <Button
+        android:id="@+id/mainA_GR_BTN_3"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_row="5"
+        android:tag="3">
+    </Button>
+
+</GridLayout>
