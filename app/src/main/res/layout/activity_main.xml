@@ -17,8 +17,9 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_row="1"
-        android:layout_gravity="fill"
         android:layout_marginTop="25dp"
+        android:clickable="true"
+        android:src="@drawable/no_celeb_data"
         android:layout_marginBottom="25dp">
     </ImageView>
 

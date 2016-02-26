@@ -3,6 +3,20 @@
       xmlns:app="http://schemas.android.com/apk/res-auto">
 
     <item
+        android:id="@+id/mainM_I_refreshData"
+        android:title="Refresh data"
+        app:showAsAction="never"
+        android:orderInCategory="1"
+        />
+
+    <item
+        android:id="@+id/mainM_I_keepScoreInNotif"
+        android:title="Score as Notification"
+        android:orderInCategory="2"
+        android:checkable="true"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/mainM_I_settyings"
         android:title="Settyings"
         android:orderInCategory="101"
