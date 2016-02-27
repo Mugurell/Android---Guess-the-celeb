@@ -1,15 +1,22 @@
 package site.petrumugurel.guessthecelebrity;
 
+import android.app.AlertDialog;
 import android.app.NotificationManager;
+import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.CountDownTimer;
+import android.os.Handler;
+import android.service.notification.StatusBarNotification;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.NotificationCompat;
 import android.support.v7.widget.Toolbar;
+import android.util.Log;
+import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
@@ -25,23 +32,33 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import dmax.dialog.SpotsDialog;
+
 public class MainActivity extends AppCompatActivity {
 
-    private int mDownloadNotificationID   = 0x0101;
-    private int mSaveImagesNotificationID = 0x0111;
+    private final int DOWNLOAD_NOTIF_ID    = 0x0101;
+    private final int SAVE_IMAGES_NOTIF_ID = 0x0111;
+
+    private final Handler mHandler = new Handler();
+    private final Random  mRandom  = new Random();
 
     private NotificationManager        mNotificationManager;
     private NotificationCompat.Builder mNotifBuilder;
-    private Button                     mStartDWBTN;
-    private String                     mHtmlContent;
+    private AlertDialog                mSpotsDialog;
 
-    private ArrayList<Bitmap> mBitmaps = new ArrayList<>();
 
+    private Button mStartDWBTN;
+    private String mHtmlContent;
+
+    private ArrayList<Bitmap> mBitmaps    = new ArrayList<>();
     private ArrayList<String> mCelebURLs  = new ArrayList<>();
     private ArrayList<String> mCelebNames = new ArrayList<>();
+
+    private Bitmap currentCeleb;
 
 //    private HashMap<String, Bitmap> mCelebs = new HashMap<>();
 
@@ -54,9 +71,35 @@ public class MainActivity extends AppCompatActivity {
         Toolbar toolbar = (Toolbar) findViewById(R.id.mainToolbar);
         setSupportActionBar(toolbar);
 
+        mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+        mNotifBuilder = new NotificationCompat.Builder(getApplicationContext());
+        mNotifBuilder.setContentTitle(getString(R.string.app_name));
+
+//        RelativeLayout layout = (RelativeLayout) findViewById(R.id.mainA_RL_viewPane);
+//        layout.setBackgroundResource(R.drawable.perforated_metal_wallpaper);
+
+//        AlertDialog.Builder builder =
+//            new AlertDialog.Builder(this)
+//                    .setTitle("Missing celebrity data")
+//                    .setMessage("Do you want to download required data?")
+//                    .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+//                        @Override
+//                        public void onClick(DialogInterface dialog, int which) {
+//                            refreshCelebData();
+//                        }
+//                    })
+//                    .setNegativeButton("No", new DialogInterface.OnClickListener() {
+//                        @Override
+//                        public void onClick(DialogInterface dialog, int which) {
+//                            finish();
+//                        }
+//                    });
+//
+//        AlertDialog alertDialog = builder.show();
 
 //        readCelebImagesFromDisk();
-        refreshCelebData();
+//        refreshCelebData();
+        new DownloadSaveCelebImagesTask().execute();
 
     }
 
@@ -70,14 +113,22 @@ public class MainActivity extends AppCompatActivity {
      * and their photos and save them to a folder inside apps file dir.
      */
     private void refreshCelebData() {
-        mNotificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        mNotifBuilder = new NotificationCompat.Builder(getApplicationContext());
 
-        mNotifBuilder.setContentTitle("Guess The Celebrity")
-                     .setContentText("Downloading celebrity data in progress")
-                     .setSmallIcon(R.drawable.ic_file_download_white_24dp);
-
+        mSpotsDialog = new SpotsDialog(MainActivity.this, "This is title");
+        mSpotsDialog.show();
+        mSpotsDialog.setOnKeyListener(new DialogInterface.OnKeyListener() {
+            @Override
+            public boolean onKey(DialogInterface dialog, int keyCode, KeyEvent event) {
+                // TODO Auto-generated method stub
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    Toast.makeText(MainActivity.this, "back pressed", Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                return true;
+            }
+        });
         new DownloadHTMLTask().execute("http://www.posh24.com/celebrities");
+
     }
 
 
@@ -136,9 +187,11 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         protected void onPreExecute() {
-            mNotifBuilder.setProgress(100, 0, true)
+            mNotifBuilder.setContentText("Downloading celebrity data ...")
+                         .setSmallIcon(R.drawable.ic_file_download_white_24dp)
+                         .setProgress(100, 0, true)
                          .setOngoing(true);
-            mNotificationManager.notify(mDownloadNotificationID, mNotifBuilder.build());
+            mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
             super.onPreExecute();
         }
         @Override
@@ -146,7 +199,23 @@ public class MainActivity extends AppCompatActivity {
             mNotifBuilder.setContentText("Celebrity data downloaded")
                          .setProgress(0, 0, false)
                          .setOngoing(false);
-            mNotificationManager.notify(mDownloadNotificationID, mNotifBuilder.build());
+            mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
+
+            new CountDownTimer(10000, 10000) {
+                @Override
+                public void onTick(long millisUntilFinished) {
+
+                }
+
+                @Override
+                public void onFinish() {
+                    Log.e("This should call", "CancelNotif");
+
+
+                    cancelNotifications(DOWNLOAD_NOTIF_ID);
+                }
+            };
+
 
 
             extractCelebData(result);
@@ -171,6 +240,10 @@ public class MainActivity extends AppCompatActivity {
 //            }
 
             readCelebImagesFromDisk();
+
+            if (mSpotsDialog.isShowing()) {
+                mSpotsDialog.dismiss();
+            }
 
             super.onPostExecute(result);
         }
@@ -233,9 +306,10 @@ public class MainActivity extends AppCompatActivity {
         @Override
         protected void onPreExecute() {
             mNotifBuilder.setProgress(100, 0, true)
-                         .setContentText("Getting celebrity images")
+                         .setContentText("Getting celebrity images ...")
+                         .setSmallIcon(R.drawable.ic_file_download_white_24dp)
                          .setOngoing(true);
-            mNotificationManager.notify(mSaveImagesNotificationID, mNotifBuilder.build());
+            mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
 
             super.onPreExecute();
         }
@@ -244,9 +318,12 @@ public class MainActivity extends AppCompatActivity {
             mNotifBuilder.setProgress(0, 0, false)
                          .setOngoing(false)
                          .setContentText("Celebrity images are prepared");
-            mNotificationManager.notify(mSaveImagesNotificationID, mNotifBuilder.build());
+            mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
 
-            readCelebImagesFromDisk();
+//            readCelebImagesFromDisk();
+
+            // Remove the notification after 10 seconds.
+            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
 
             super.onPostExecute(result);
         }
@@ -286,27 +363,85 @@ public class MainActivity extends AppCompatActivity {
 
     /**
      * Will check if previous celebrities photos already exists in apps file dir and try to save all
-     * existing images into an {@code ArrayList<Bitmap>} to be worked with further in the app.
+     * existing images into &nbsp;{@link #mBitmaps}&nbsp; to be worked with further in the app.
      */
     private void readCelebImagesFromDisk() {
+        mSpotsDialog = new SpotsDialog(MainActivity.this);
+        mSpotsDialog.setCancelable(false);
+
+        mSpotsDialog.show();
+
+
+
         File     path       = new File(getApplicationContext().getFilesDir() + "/Celeb Images");
         String[] imageFiles = null;
         if (path.exists()) {
             imageFiles = path.list();
         }
         else {
-            Toast.makeText(MainActivity.this, "Invalid folder path", Toast.LENGTH_LONG).show();
+            Log.e(MainActivity.class.getSimpleName(), "Invalid folder path to load images from");
+//            Toast.makeText(MainActivity.this, "Invalid folder path", Toast.LENGTH_LONG).show();
         }
+
         if (imageFiles != null) {
             for (String image : imageFiles) {
                 mBitmaps.add(BitmapFactory.decodeFile(path.getPath() + "/" + image));
             }
         }
 //          For debugging
-//        if (mBitmaps != null) {
-//            System.out.println(mBitmaps.toString());
-//        }
+        if (mBitmaps != null) {
+            System.out.println(mBitmaps.toString());
+        }
 
+        if (mSpotsDialog.isShowing()) {
+            mSpotsDialog.dismiss();
+        }
+
+    }
+
+
+    private void selectRandomCeleb() {
+        // todo    De ce sa nu salvez doar un string - pathul pozei in metoda de mai sus, ramanand sa incarc poza cautata la runtime., nu sa am o lista intreaga de poze - size mare
+        int chosenCeleb = mRandom.nextInt(mBitmaps.size());
+        currentCeleb = mBitmaps.get(chosenCeleb);
+        String currCelebName;
+    }
+
+
+    /**
+     * Helper function to cancel all requested notifications if active.
+     * @param delayMillis milliseconds after which to dismiss the notification(s) if active.
+     * @param notificationIDs notifications we want to dismiss.
+     */
+    private void cancelNotifications(long delayMillis, Integer... notificationIDs) {
+        final ArrayList<Integer> appsActiveNotif = new ArrayList<>();
+
+        if (mNotificationManager != null) {
+            StatusBarNotification[] notifications = mNotificationManager.getActiveNotifications();
+            for (StatusBarNotification activeNotif : notifications) {
+                for (int notifID : notificationIDs) {
+                    if (activeNotif.getId() == notifID) {
+                        if (delayMillis == 0) {
+                            mNotificationManager.cancel(notifID);
+                        }
+                        else {
+                            appsActiveNotif.add(notifID);
+                        }
+                    }
+                }
+            }
+        }
+
+        if (!appsActiveNotif.isEmpty()) {
+            mHandler.postDelayed(new Runnable() {
+                @Override
+                public void run() {
+                    for (int activeNotif : appsActiveNotif) {
+                        mNotificationManager.cancel(activeNotif);
+                    }
+                }
+            }, delayMillis);
+        }
     }
 
 
@@ -341,8 +476,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     public void onDestroy() {
-        mNotificationManager.cancel(mDownloadNotificationID);
-        mNotificationManager.cancel(mSaveImagesNotificationID);
+        cancelNotifications(0l, DOWNLOAD_NOTIF_ID, SAVE_IMAGES_NOTIF_ID);
+
         super.onDestroy();
     }
 
