@@ -8,7 +8,6 @@ import android.graphics.BitmapFactory;
 import android.graphics.Color;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.CountDownTimer;
 import android.os.Handler;
 import android.service.notification.StatusBarNotification;
 import android.support.design.widget.Snackbar;
@@ -20,7 +19,9 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
+import android.widget.ImageView;
 import android.widget.Toast;
 
 import java.io.File;
@@ -43,13 +44,14 @@ public class MainActivity extends AppCompatActivity {
     private final int DOWNLOAD_NOTIF_ID    = 0x0101;
     private final int SAVE_IMAGES_NOTIF_ID = 0x0111;
 
+    private final String CELEB_IMAGES_FOLDER = "Celeb Images";
+
     private final Handler mHandler = new Handler();
     private final Random  mRandom  = new Random();
 
     private NotificationManager        mNotificationManager;
     private NotificationCompat.Builder mNotifBuilder;
     private AlertDialog                mSpotsDialog;
-
 
     private Button mStartDWBTN;
     private String mHtmlContent;
@@ -58,7 +60,9 @@ public class MainActivity extends AppCompatActivity {
     private ArrayList<String> mCelebURLs  = new ArrayList<>();
     private ArrayList<String> mCelebNames = new ArrayList<>();
 
-    private Bitmap currentCeleb;
+    private Bitmap    currentCeleb;
+    private ImageView mCelebIV;
+    private String[] mCelebsOnDisk = null;
 
 //    private HashMap<String, Bitmap> mCelebs = new HashMap<>();
 
@@ -75,31 +79,45 @@ public class MainActivity extends AppCompatActivity {
         mNotifBuilder = new NotificationCompat.Builder(getApplicationContext());
         mNotifBuilder.setContentTitle(getString(R.string.app_name));
 
-//        RelativeLayout layout = (RelativeLayout) findViewById(R.id.mainA_RL_viewPane);
-//        layout.setBackgroundResource(R.drawable.perforated_metal_wallpaper);
+        mSpotsDialog = new SpotsDialog(this, R.style.Custom_Spots_Dialog);
+        mSpotsDialog.setCancelable(false);
+        mSpotsDialog.setOnKeyListener(new DialogInterface.OnKeyListener() {
+            @Override
+            public boolean onKey(DialogInterface dialog, int keyCode, KeyEvent event) {
+                if (keyCode == KeyEvent.KEYCODE_BACK) {
+                    Toast.makeText(MainActivity.this,
+                                   "Just a little more..", Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+                return true;
+            }
+        });
 
-//        AlertDialog.Builder builder =
-//            new AlertDialog.Builder(this)
-//                    .setTitle("Missing celebrity data")
-//                    .setMessage("Do you want to download required data?")
-//                    .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
-//                        @Override
-//                        public void onClick(DialogInterface dialog, int which) {
-//                            refreshCelebData();
-//                        }
-//                    })
-//                    .setNegativeButton("No", new DialogInterface.OnClickListener() {
-//                        @Override
-//                        public void onClick(DialogInterface dialog, int which) {
-//                            finish();
-//                        }
-//                    });
-//
-//        AlertDialog alertDialog = builder.show();
 
-//        readCelebImagesFromDisk();
-//        refreshCelebData();
-        new DownloadSaveCelebImagesTask().execute();
+        Button option1BTN = (Button) findViewById(R.id.mainA_RL_BTN_0);
+        mCelebIV = (ImageView) findViewById(R.id.mainA_RL_IV_celebImage);
+
+        if (!readCelebImagesFromDisk()) {
+            AlertDialog.Builder builder =
+                    new AlertDialog.Builder(this)
+                            .setTitle("Missing celebrity data")
+                            .setMessage("Do you want to download required data?")
+                            .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialog, int which) {
+                                    getWindow().addFlags(
+                                            WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+                                    refreshCelebData();
+                                }
+                            })
+                            .setNegativeButton("No", new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialog, int which) {
+                                    ToastNoImages(4000);
+                                }
+                            });
+            AlertDialog alertDialog = builder.show();
+        }
 
     }
 
@@ -113,22 +131,7 @@ public class MainActivity extends AppCompatActivity {
      * and their photos and save them to a folder inside apps file dir.
      */
     private void refreshCelebData() {
-
-        mSpotsDialog = new SpotsDialog(MainActivity.this, "This is title");
-        mSpotsDialog.show();
-        mSpotsDialog.setOnKeyListener(new DialogInterface.OnKeyListener() {
-            @Override
-            public boolean onKey(DialogInterface dialog, int keyCode, KeyEvent event) {
-                // TODO Auto-generated method stub
-                if (keyCode == KeyEvent.KEYCODE_BACK) {
-                    Toast.makeText(MainActivity.this, "back pressed", Toast.LENGTH_SHORT).show();
-                    return true;
-                }
-                return true;
-            }
-        });
         new DownloadHTMLTask().execute("http://www.posh24.com/celebrities");
-
     }
 
 
@@ -192,7 +195,9 @@ public class MainActivity extends AppCompatActivity {
                          .setProgress(100, 0, true)
                          .setOngoing(true);
             mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
-            super.onPreExecute();
+
+            mSpotsDialog.show();
+            mSpotsDialog.setMessage("Downloading celebrity data ...");
         }
         @Override
         protected void onPostExecute(String result) {
@@ -200,55 +205,15 @@ public class MainActivity extends AppCompatActivity {
                          .setProgress(0, 0, false)
                          .setOngoing(false);
             mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
-
-            new CountDownTimer(10000, 10000) {
-                @Override
-                public void onTick(long millisUntilFinished) {
-
-                }
-
-                @Override
-                public void onFinish() {
-                    Log.e("This should call", "CancelNotif");
-
-
-                    cancelNotifications(DOWNLOAD_NOTIF_ID);
-                }
-            };
-
-
-
-            extractCelebData(result);
-
-
-            saveCelebsToDisk();
-
-
-//            // Write the whole hashmap to disk.
-//            // Not possible this way because Bitmap isn't serializable
-//            String filename = "celebs.dat";
-//            File celebData = new File(getApplicationContext().getFilesDir(), filename);
-//            try {
-//                FileOutputStream f = new FileOutputStream(celebData);
-//                ObjectOutputStream s = new ObjectOutputStream(f);
-//                s.writeObject(mCelebs);
-//                s.close();
-//            } catch (FileNotFoundException e) {
-//                e.printStackTrace();
-//            } catch (IOException e) {
-//                e.printStackTrace();
-//            }
-
-            readCelebImagesFromDisk();
-
             if (mSpotsDialog.isShowing()) {
                 mSpotsDialog.dismiss();
             }
 
-            super.onPostExecute(result);
+            cancelNotifications(5000l, DOWNLOAD_NOTIF_ID);
+
+            extractCelebData(result);
+
         }
-
-
     }
     /**
      * This will be used to download images from the internet and save them with the filename
@@ -276,14 +241,14 @@ public class MainActivity extends AppCompatActivity {
 
                     try {
                         File celebFolder = new File(getApplicationContext().getFilesDir(),
-                                                    "Celeb Images");
+                                                    CELEB_IMAGES_FOLDER);
                         // Refresh data
                         if (celebFolder.exists()) {
                             celebFolder.delete();
                         }
                         celebFolder.mkdirs();
 
-                        File celeb = new File(celebFolder, imageName + ".jpeg");
+                        File celeb = new File(celebFolder, imageName);
 
                         FileOutputStream out = new FileOutputStream(celeb);
                         celebImage.compress(Bitmap.CompressFormat.JPEG, 100, out);
@@ -310,8 +275,8 @@ public class MainActivity extends AppCompatActivity {
                          .setSmallIcon(R.drawable.ic_file_download_white_24dp)
                          .setOngoing(true);
             mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
-
-            super.onPreExecute();
+            mSpotsDialog.show();
+            mSpotsDialog.setMessage("Getting celebrity images ...");
         }
         @Override
         protected void onPostExecute(Void result) {
@@ -319,16 +284,30 @@ public class MainActivity extends AppCompatActivity {
                          .setOngoing(false)
                          .setContentText("Celebrity images are prepared");
             mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
+            if (mSpotsDialog.isShowing()) {
+                mSpotsDialog.dismiss();
+            }
 
-//            readCelebImagesFromDisk();
-
-            // Remove the notification after 10 seconds.
             cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
 
-            super.onPostExecute(result);
+            if (!readCelebImagesFromDisk()) {
+                ToastNoImages(4000);
+            }
         }
+
+
     }
 
+    private void ToastNoImages(long millisDelay) {
+        Toast.makeText(MainActivity.this, "Cannot read images\nApp will be closing.",
+                       Toast.LENGTH_LONG).show();
+        mHandler.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                finish();
+            }
+        }, millisDelay);
+    }
 
     /**
      * Helper function to extract the relevant celebrity data from the html read.
@@ -358,45 +337,56 @@ public class MainActivity extends AppCompatActivity {
             mCelebNames.add(namesMatcher.group(1));
 //                System.out.println(namesMatcher.group(1));
         }
+
+        saveCelebsToDisk();
+
     }
 
 
     /**
      * Will check if previous celebrities photos already exists in apps file dir and try to save all
-     * existing images into &nbsp;{@link #mBitmaps}&nbsp; to be worked with further in the app.
+     * existing images filenames into &nbsp;{@link #mCelebsOnDisk}&nbsp; to be worked with further
+     * in the app.
+     * @return if workable with images found on disk or not.
      */
-    private void readCelebImagesFromDisk() {
-        mSpotsDialog = new SpotsDialog(MainActivity.this);
-        mSpotsDialog.setCancelable(false);
-
+    private boolean readCelebImagesFromDisk() {
         mSpotsDialog.show();
+        mSpotsDialog.setMessage("Reading?");
 
+        boolean ifFoundImages = false;
 
-
-        File     path       = new File(getApplicationContext().getFilesDir() + "/Celeb Images");
-        String[] imageFiles = null;
+        final File path = new File(getApplicationContext().getFilesDir()
+                                   + "/" + CELEB_IMAGES_FOLDER);
         if (path.exists()) {
-            imageFiles = path.list();
-        }
-        else {
-            Log.e(MainActivity.class.getSimpleName(), "Invalid folder path to load images from");
-//            Toast.makeText(MainActivity.this, "Invalid folder path", Toast.LENGTH_LONG).show();
-        }
-
-        if (imageFiles != null) {
-            for (String image : imageFiles) {
-                mBitmaps.add(BitmapFactory.decodeFile(path.getPath() + "/" + image));
+            mCelebsOnDisk = path.list();
+            if (mCelebsOnDisk.length == 100) {  // I happen to know exactly how many should be
+                ifFoundImages = true;
+                Log.i(getApplication().getPackageName(), "Found 100 celeb images");
             }
         }
-//          For debugging
-        if (mBitmaps != null) {
-            System.out.println(mBitmaps.toString());
+        else {
+            Log.i(getApplication().getPackageName(), "No images workable with found on disk");
         }
+
+//        // For debugging
+//        if (mCelebsOnDisk != null) {
+//            for (String image : mCelebsOnDisk) {
+//                System.out.println(image);
+//            }
+//        }
 
         if (mSpotsDialog.isShowing()) {
             mSpotsDialog.dismiss();
         }
 
+        return ifFoundImages;
+    }
+
+
+    private void initCelebIVAndButtons() {
+        File path = new File(getApplicationContext().getFilesDir() + "/" + CELEB_IMAGES_FOLDER);
+        mCelebIV.setImageBitmap(BitmapFactory.decodeFile(path.getPath() + "/"
+                                                         + mCelebsOnDisk[1]));
     }
 
 
