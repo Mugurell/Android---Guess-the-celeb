@@ -10,6 +10,7 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
 import android.service.notification.StatusBarNotification;
+import android.support.annotation.NonNull;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.NotificationCompat;
@@ -19,6 +20,7 @@ import android.view.KeyEvent;
 import android.view.Menu;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.Toast;
@@ -32,35 +34,42 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Random;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import dmax.dialog.SpotsDialog;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
     private final int DOWNLOAD_NOTIF_ID    = 0x0101;
     private final int SAVE_IMAGES_NOTIF_ID = 0x0111;
-
-    private static final String TAG = MainActivity.class.getSimpleName();
-
-    private final String  CELEB_IMAGES_FOLDER = "Celeb Images";
-    private       boolean mIfImagesLoaded     = false;
 
     private NotificationManager        mNotificationManager;
     private NotificationCompat.Builder mNotifBuilder;
     private AlertDialog                mSpotsDialog;
 
-    private final Handler mHandler = new Handler();
-    private final Random  mRandom  = new Random();
+    private static final String TAG                 = MainActivity.class.getSimpleName();
+    private final        String CELEB_IMAGES_FOLDER = "Celeb Images";
+
+    private final        Handler mHandler = new Handler();
+    private static final Random  mRandom  = new Random();
 
     /** Array of filenames for each celeb image on disk. The app will work based on this. */
     private String[] mCelebsOnDisk = null;
+    private String mDisplayedCeleb;
 
-    private Bitmap                     currentCeleb;
-    private ImageView                  mCelebIV;
-    private DownloadHTMLSaveImagesTask mTask;
+    private int     mNoOfCelebsGuessed;
+    private int     mNoOfCelebsShowed;
+    private int     mNoOfCelebsForfeited;
+    private boolean mIfShowCorrectAnswer;
+
+    private Button    mOption1BTN;
+    private Button    mOption2BTN;
+    private Button    mOption3BTN;
+    private Button    mOption4BTN;
+    private ImageView mCelebIV;
 
 
     @Override
@@ -82,19 +91,40 @@ public class MainActivity extends AppCompatActivity {
             public boolean onKey(DialogInterface dialog, int keyCode, KeyEvent event) {
                 if (keyCode == KeyEvent.KEYCODE_BACK) {
                     Toast.makeText(MainActivity.this,
-                                   "A little patience I beg of you..", Toast.LENGTH_SHORT).show();
+                                   "Just a little more..", Toast.LENGTH_SHORT).show();
                     return true;
                 }
                 return true;
             }
         });
 
-
-        Button option1BTN = (Button) findViewById(R.id.mainA_RL_BTN_0);
+        mOption1BTN = (Button) findViewById(R.id.mainA_RL_BTN_1);
+        mOption2BTN = (Button) findViewById(R.id.mainA_RL_BTN_2);
+        mOption3BTN = (Button) findViewById(R.id.mainA_RL_BTN_3);
+        mOption4BTN = (Button) findViewById(R.id.mainA_RL_BTN_4);
+        mOption1BTN.setOnClickListener(this);
+        mOption2BTN.setOnClickListener(this);
+        mOption3BTN.setOnClickListener(this);
+        mOption4BTN.setOnClickListener(this);
         mCelebIV = (ImageView) findViewById(R.id.mainA_RL_IV_celebImage);
 
+        mNoOfCelebsShowed = mNoOfCelebsGuessed = mNoOfCelebsForfeited = 0;
+        mIfShowCorrectAnswer = false;
+
+        ensureAvailableCelebImages();
+    }
+
+    /**
+     * This is to be called before trying any operation with celeb data.
+     * Will check if celeb data is already present on device's internal memory so the app can
+     * continue, if not will ask the user if he want to download required data.
+     */
+    private void ensureAvailableCelebImages() {
         if (!loadCelebImagesFromDisk()) {
             showMissingDataDialog();
+        }
+        else {
+            startGame();
         }
     }
 
@@ -108,6 +138,7 @@ public class MainActivity extends AppCompatActivity {
                 new AlertDialog.Builder(this)
                         .setTitle("Missing celebrity data")
                         .setMessage("Do you want to download required data?")
+                        .setCancelable(false)
                         .setPositiveButton("Yes", new DialogInterface.OnClickListener() {
                             @Override
                             public void onClick(DialogInterface dialog, int which) {
@@ -129,11 +160,83 @@ public class MainActivity extends AppCompatActivity {
      * celeb image and name, and save that data on device's internal storage.
      */
     private void refreshCelebData() {
+        new DownloadHTMLSaveImagesTask().execute("http://www.posh24.com/celebrities");
+    }
 
-        mTask = new DownloadHTMLSaveImagesTask();
-        mTask.execute("http://www.posh24.com/celebrities");
+    
+    private void startGame() {
+        Integer[] randomCelebs = get4RandomCelebs();
 
-        Toast.makeText(MainActivity.this, "Am terminat cu imaginile", Toast.LENGTH_SHORT).show();
+        initButtonsAndImage(randomCelebs);
+    }
+
+    /**
+     * Used to set the text for the four buttons with the names of {@link #mCelebsOnDisk} with
+     * {@code randomCelebs} indexes. Will also set the image for apps ImageView to be one of the
+     * 4 {@code randomCelebs} at random.
+     * <br>The correct association between the displayed image and one of the buttons is to be
+     * checked in the button's onClick listener.
+     * @param randomCelebs array of valid indexes of {@link #mCelebsOnDisk} to display.
+     */
+    private void initButtonsAndImage(Integer[] randomCelebs) {
+        Button[] buttons = {mOption1BTN, mOption2BTN, mOption3BTN, mOption4BTN};
+        for (int i = 0; i < 4; i++) {
+            buttons[i].setText(mCelebsOnDisk[randomCelebs[i]]);
+        }
+
+        // Select one celeb for which to display the image.
+        mDisplayedCeleb = mCelebsOnDisk[randomCelebs[mRandom.nextInt(randomCelebs.length)]];
+        File imagesPath = new File(
+                getApplicationContext().getFilesDir() + "/" + CELEB_IMAGES_FOLDER);
+        mCelebIV.setImageBitmap(BitmapFactory.decodeFile(
+                imagesPath.toString() + "/" + mDisplayedCeleb));
+
+        for (int i = 0; i < buttons.length; i++) {
+            if (buttons[i].getText().equals(mDisplayedCeleb)) {
+                Log.d(TAG, "Correct answer is " + (i + 1));
+            }
+        }
+    }
+
+    /**
+     * Used for getting 4 random celebs to be used on each minigame.
+     * @return Array of 4 random, unique, valid indexes of celebs from {@link #mCelebsOnDisk}.
+     */
+    @NonNull
+    private Integer[] get4RandomCelebs() {
+        HashSet<Integer> randCelebs = new HashSet<>();
+        while (randCelebs.size() < 4) {
+            randCelebs.add(mRandom.nextInt(mCelebsOnDisk.length));
+        }
+        return (randCelebs.toArray(new Integer[randCelebs.size()]));
+    }
+
+
+    /**
+     * To be called only as a listener for app's buttons.
+     * <br>Will check if the button pressed refers to the celeb with the image displayed and pass
+     * the result of this check further to modify current score.
+     * @param v {@code Button!} that was pressed.
+     */
+    @Override
+    public void onClick(View v) {
+        Button pressedBTN = ((Button) v);
+
+        if (pressedBTN.getText().equals(mDisplayedCeleb)) {
+            mNoOfCelebsGuessed++;
+        }
+
+        mNoOfCelebsShowed++;
+
+        if (mIfShowCorrectAnswer) {
+            Toast.makeText(MainActivity.this, "Was " + mDisplayedCeleb, Toast.LENGTH_SHORT).show();
+        }
+
+        assert getSupportActionBar() != null;
+        getSupportActionBar().setSubtitle("Score: " + mNoOfCelebsGuessed + " / " + mNoOfCelebsShowed
+                                          + "\t\t\t\t\t\t\t\tForfeited: " + mNoOfCelebsForfeited);
+
+        startGame();
     }
 
 
@@ -185,23 +288,26 @@ public class MainActivity extends AppCompatActivity {
             mSpotsDialog.show();
             mSpotsDialog.setMessage("Downloading celebrity data ...");
         }
+
         @Override
         protected void onPostExecute(String htmlRead) {
             mNotifBuilder.setContentText("Celebrity data downloaded")
                          .setProgress(0, 0, false)
                          .setOngoing(false);
             mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
+
+            cancelNotifications(5000l, DOWNLOAD_NOTIF_ID);
+
             if (mSpotsDialog.isShowing()) {
                 mSpotsDialog.dismiss();
             }
-            cancelNotifications(5000l, DOWNLOAD_NOTIF_ID);
 
             // Get another AsyncTask to download celeb images and save them to internal storage.
             new DownloadSaveCelebImagesTask().execute(htmlRead);
         }
     }
-    
-    
+
+
     /**
      * Will extract from the first String received as argument celeb image URL and name, and then
      * will save that image with appropriate filename on device's internal storage.
@@ -262,11 +368,9 @@ public class MainActivity extends AppCompatActivity {
                          .setOngoing(false)
                          .setContentText("Celebrity images are prepared");
             mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
-            if (mSpotsDialog.isShowing()) {
-                mSpotsDialog.dismiss();
-            }
 
-            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
+            mSpotsDialog.show();
+            mSpotsDialog.setMessage("Saving celeb photos ...");
         }
 
         @Override
@@ -275,12 +379,14 @@ public class MainActivity extends AppCompatActivity {
                          .setOngoing(false)
                          .setContentText("Celebrity images are prepared");
             mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
+
+            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
+
             if (mSpotsDialog.isShowing()) {
                 mSpotsDialog.dismiss();
             }
 
-            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
-            mIfImagesLoaded = true;
+            ensureAvailableCelebImages();
         }
     }
 
@@ -307,7 +413,6 @@ public class MainActivity extends AppCompatActivity {
         return result;
     }
 
-
     /**
      * Will check if previous celebrities photos already exists in apps file dir and try to save all
      * existing images filenames into &nbsp;{@link #mCelebsOnDisk}&nbsp; to be worked with further
@@ -325,7 +430,9 @@ public class MainActivity extends AppCompatActivity {
                 ifImagesLoaded = true;
                 Log.i(TAG, "Found 100 celeb images");
             }
-            Log.i(TAG, "Invalid number of celebrities on disk");
+            else {
+                Log.i(TAG, "Invalid number of celebrities on disk");
+            }
         }
         else {
             Log.i(TAG, "Invalid path for celeb images");
@@ -333,6 +440,7 @@ public class MainActivity extends AppCompatActivity {
 
         return ifImagesLoaded;
     }
+
 
     /**
      * Display a Toast message saying {@code "Cannot read images\nApp will be closing."}.
@@ -348,7 +456,6 @@ public class MainActivity extends AppCompatActivity {
             }
         }, millisDelay);
     }
-
 
     /**
      * Helper function to cancel all requested notifications if active.
@@ -395,25 +502,46 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
-    public boolean onOptionsItemSelected(MenuItem menuItem) {
-        int id = menuItem.getItemId();
+    public boolean onOptionsItemSelected(MenuItem item) {
 
-        if (id == R.id.mainM_I_settyings) {
-            Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content),
-                                              "No available settyings atm",
-                                              Snackbar.LENGTH_LONG);
-            View snackbarView = snackbar.setActionTextColor(Color.WHITE).getView();
-            snackbarView.setBackgroundColor(getResources().getColor(R.color.colorPrimary));
-            snackbarView.animate().rotationX(-360).setDuration(700);
-            snackbar.setAction("Ok", new View.OnClickListener() {
-                @Override
-                public void onClick(View v) {
+        switch (item.getItemId()) {
+            case R.id.mainM_I_settyings:
+                Snackbar snackbar = Snackbar.make(findViewById(android.R.id.content),
+                                                  "No more available settyings atm",
+                                                  Snackbar.LENGTH_LONG);
+                View snackbarView = snackbar.setActionTextColor(Color.WHITE).getView();
+                snackbarView.setBackgroundColor(getResources().getColor(R.color.colorPrimary));
+                snackbarView.animate().rotationX(-360).setDuration(700);
+                snackbar.setAction("Ok", new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
 
-                }
-            }).show();
+                    }
+                }).show();
+
+            case R.id.mainM_I_showAnswer:
+                item.setChecked(!item.isChecked());
+                mIfShowCorrectAnswer = item.isChecked();
+
+            case R.id.mainM_I_resetScores:
+                mNoOfCelebsShowed = mNoOfCelebsForfeited = mNoOfCelebsGuessed = 0;
+                assert getSupportActionBar() != null;
+                getSupportActionBar().setSubtitle("Once ate a whole bowl of soup");
         }
 
         return true;    // we've handled the press, don't want other listeners check for it
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+    }
+
+    @Override
+    public void onStop() {
+        super.onStop();
+        getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
 
     @Override

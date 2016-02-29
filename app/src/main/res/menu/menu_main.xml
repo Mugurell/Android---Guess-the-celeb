@@ -7,13 +7,19 @@
         android:title="Refresh data"
         app:showAsAction="never"
         android:orderInCategory="1"
-        />
+        android:visible="false" />
 
     <item
-        android:id="@+id/mainM_I_keepScoreInNotif"
-        android:title="Score as Notification"
+        android:id="@+id/mainM_I_showAnswer"
+        android:title="Show Correct Answer"
         android:orderInCategory="2"
         android:checkable="true"
+        app:showAsAction="never" />
+
+    <item
+        android:id="@+id/mainM_I_resetScores"
+        android:title="Reset scores"
+        android:orderInCategory="3"
         app:showAsAction="never" />
 
     <item
