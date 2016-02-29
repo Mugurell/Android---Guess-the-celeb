@@ -6,9 +6,9 @@ import android.content.DialogInterface;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Handler;
-import android.os.StrictMode;
 import android.service.notification.StatusBarNotification;
 import android.support.design.widget.Snackbar;
 import android.support.v7.app.AppCompatActivity;
@@ -45,7 +45,8 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = MainActivity.class.getSimpleName();
 
-    private final String CELEB_IMAGES_FOLDER = "Celeb Images";
+    private final String  CELEB_IMAGES_FOLDER = "Celeb Images";
+    private       boolean mIfImagesLoaded     = false;
 
     private NotificationManager        mNotificationManager;
     private NotificationCompat.Builder mNotifBuilder;
@@ -55,10 +56,11 @@ public class MainActivity extends AppCompatActivity {
     private final Random  mRandom  = new Random();
 
     /** Array of filenames for each celeb image on disk. The app will work based on this. */
-    private String[]          mCelebsOnDisk = null;
+    private String[] mCelebsOnDisk = null;
 
-    private Bitmap    currentCeleb;
-    private ImageView mCelebIV;
+    private Bitmap                     currentCeleb;
+    private ImageView                  mCelebIV;
+    private DownloadHTMLSaveImagesTask mTask;
 
 
     @Override
@@ -87,12 +89,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        if (android.os.Build.VERSION.SDK_INT > 9) {
-            StrictMode.ThreadPolicy policy
-                    = new StrictMode.ThreadPolicy.Builder().permitAll().build();
-            StrictMode.setThreadPolicy(policy);
-        }
-
 
         Button option1BTN = (Button) findViewById(R.id.mainA_RL_BTN_0);
         mCelebIV = (ImageView) findViewById(R.id.mainA_RL_IV_celebImage);
@@ -108,7 +104,6 @@ public class MainActivity extends AppCompatActivity {
      * let's him choose if to try and acquire said data from internet or leave the app.
      */
     private void showMissingDataDialog() {
-        Toast.makeText(MainActivity.this, "Sunt in dialog", Toast.LENGTH_SHORT).show();
         final AlertDialog.Builder builder =
                 new AlertDialog.Builder(this)
                         .setTitle("Missing celebrity data")
@@ -134,74 +129,159 @@ public class MainActivity extends AppCompatActivity {
      * celeb image and name, and save that data on device's internal storage.
      */
     private void refreshCelebData() {
-        String siteHTML = getCelebHTML("http://www.posh24.com/celebrities");
-        ArrayList<String> celebURLs = extractCelebData(siteHTML, "<img src=\"(.+?)\"");
-        ArrayList<String> celebNames = extractCelebData(siteHTML, "alt=\"(.+?)\"");
 
-        if (celebURLs.size() > 0 && celebURLs.size() == celebNames.size()) {
-            saveCelebImagesOnDisk(celebURLs, celebNames);
-        }
+        mTask = new DownloadHTMLSaveImagesTask();
+        mTask.execute("http://www.posh24.com/celebrities");
+
+        Toast.makeText(MainActivity.this, "Am terminat cu imaginile", Toast.LENGTH_SHORT).show();
     }
 
 
     /**
-     * Will try to read the entire html content of a site which should contain some celebrity
-     * info &mdash; name and thumbnail.
-     *
-     * @param siteAddress valid address of a site which contains info about celebrities.
-     * @return String containing all html code of the site.
+     * Will download the HTML code of a site &mdash; first String argument, then call another 
+     * AsyncTask to extract celeb images and save them to device's internal memory.
+     * @see site.petrumugurel.guessthecelebrity.MainActivity.DownloadSaveCelebImagesTask
      */
-    public String getCelebHTML(String siteAddress) {
-        mNotifBuilder.setContentText("Downloading celebrity data ...")
-                     .setSmallIcon(R.drawable.ic_file_download_white_24dp)
-                     .setProgress(100, 0, true)
-                     .setOngoing(true);
-        mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
+    private class DownloadHTMLSaveImagesTask extends AsyncTask<String, Void, String> {
+        @Override
+        protected String doInBackground(String... urls) {
+            String result = "";
+            URL    url;
 
-        mSpotsDialog.show();
-        mSpotsDialog.setMessage("Downloading celebrity data ...");
+            HttpURLConnection urlConnection;
 
-        String result = "";     // Will hold entire html site source.
-        URL    url;
-        HttpURLConnection urlConnection;
+            try {
+                url = new URL(urls[0]);
+                urlConnection = (HttpURLConnection) url.openConnection();
+                urlConnection.connect();
 
-        try {
-            url = new URL(siteAddress);
-            urlConnection = (HttpURLConnection) url.openConnection();
-            urlConnection.connect();
+                InputStream inputStream = urlConnection.getInputStream();
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
 
-            InputStream inputStream = urlConnection.getInputStream();
-            InputStreamReader inputStreamReader = new InputStreamReader(inputStream);
+                int data = inputStreamReader.read();
+                while (data != -1) {
+                    result += (char) data;
+                    data = inputStreamReader.read();
+                }
 
-            int data = inputStreamReader.read();
-            while (data != -1) {
-                result += (char) data;
-                data = inputStreamReader.read();
+                urlConnection.disconnect();
+                return result;
+
+            } catch (Exception e) {
+                e.printStackTrace();
             }
 
-            urlConnection.disconnect();
-
-        } catch (Exception e) {
-            e.printStackTrace();
+            return result;
         }
 
-        // Need to first do a split because on the bottom of the page there are other
-        // unneeded images. We only want the ones above.
-        String[] readHTMLData  = result.split("<div class=\"sidebarContainer\">");
-        String   htmlCelebData = readHTMLData[0];
+        @Override
+        protected void onPreExecute() {
+            mNotifBuilder.setContentText("Downloading celebrity data ...")
+                         .setSmallIcon(R.drawable.ic_file_download_white_24dp)
+                         .setProgress(100, 0, true)
+                         .setOngoing(true);
+            mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
 
+            mSpotsDialog.show();
+            mSpotsDialog.setMessage("Downloading celebrity data ...");
+        }
+        @Override
+        protected void onPostExecute(String htmlRead) {
+            mNotifBuilder.setContentText("Celebrity data downloaded")
+                         .setProgress(0, 0, false)
+                         .setOngoing(false);
+            mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
+            if (mSpotsDialog.isShowing()) {
+                mSpotsDialog.dismiss();
+            }
+            cancelNotifications(5000l, DOWNLOAD_NOTIF_ID);
 
-        mNotifBuilder.setContentText("Celebrity data downloaded")
-                     .setProgress(0, 0, false)
-                     .setOngoing(false);
-        mNotificationManager.notify(DOWNLOAD_NOTIF_ID, mNotifBuilder.build());
-        if (mSpotsDialog.isShowing()) {
-            mSpotsDialog.dismiss();
+            // Get another AsyncTask to download celeb images and save them to internal storage.
+            new DownloadSaveCelebImagesTask().execute(htmlRead);
+        }
+    }
+    
+    
+    /**
+     * Will extract from the first String received as argument celeb image URL and name, and then
+     * will save that image with appropriate filename on device's internal storage.
+     */
+    private class DownloadSaveCelebImagesTask extends AsyncTask<String, Void, Void> {
+
+        @Override
+        protected Void doInBackground(String... HTMLCode) {
+
+            // Need to first do a split because on the bottom of the page there are other
+            // unneeded images. We only want the ones above.
+            String[] readHTMLData  = HTMLCode[0].split("<div class=\"sidebarContainer\">");
+            String   htmlCelebData = readHTMLData[0];
+
+            // From all that html code get the celeb images and their names.
+            // This is trivial, can be don on the main thread.
+            ArrayList<String> celebURLs = extractCelebData(htmlCelebData, "<img src=\"(.+?)\"");
+            ArrayList<String> celebNames = extractCelebData(htmlCelebData, "alt=\"(.+?)\"");
+
+            // Create a new folder in which to store the new images.
+            File celebFolder = new File(getApplicationContext().getFilesDir(), CELEB_IMAGES_FOLDER);
+            if (celebFolder.exists()) {
+                celebFolder.delete();
+            }
+            celebFolder.mkdirs();
+
+            int i = 0;
+            for (String imageURL : celebURLs) {
+                try {
+                    URL url = new URL(imageURL);
+                    HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
+                    urlConnection.connect();
+
+                    InputStream inputStream = urlConnection.getInputStream();
+                    Bitmap celebImage = BitmapFactory.decodeStream(inputStream);
+
+                    String imageName = celebNames.get(i++);
+
+                    File celeb = new File(celebFolder, imageName);
+
+                    FileOutputStream fout = new FileOutputStream(celeb);
+                    celebImage.compress(Bitmap.CompressFormat.JPEG, 100, fout);
+                    fout.close();
+
+                } catch (MalformedURLException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+
+            return null;
         }
 
-        cancelNotifications(5000l, DOWNLOAD_NOTIF_ID);
+        @Override
+        protected void onPreExecute() {
+            mNotifBuilder.setProgress(0, 0, false)
+                         .setOngoing(false)
+                         .setContentText("Celebrity images are prepared");
+            mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
+            if (mSpotsDialog.isShowing()) {
+                mSpotsDialog.dismiss();
+            }
 
-        return htmlCelebData;
+            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
+        }
+
+        @Override
+        protected void onPostExecute(Void result) {
+            mNotifBuilder.setProgress(0, 0, false)
+                         .setOngoing(false)
+                         .setContentText("Celebrity images are prepared");
+            mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
+            if (mSpotsDialog.isShowing()) {
+                mSpotsDialog.dismiss();
+            }
+
+            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
+            mIfImagesLoaded = true;
+        }
     }
 
 
@@ -225,68 +305,6 @@ public class MainActivity extends AppCompatActivity {
         }
 
         return result;
-    }
-
-
-    /**
-     * Will download celebrity's images from the internet and save them with the filename
-     * matching the celebrity's name into app's files dir on the Android device.
-     *
-     * @param celebURLs from which to download images
-     * @param celebNames names for the downloaded images.
-     */
-    private void saveCelebImagesOnDisk(ArrayList<String> celebURLs, ArrayList<String> celebNames) {
-        mNotifBuilder.setProgress(100, 0, true)
-                     .setContentText("Getting celebrity images ...")
-                     .setSmallIcon(R.drawable.ic_file_download_white_24dp)
-                     .setOngoing(true);
-        mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
-        mSpotsDialog.show();
-        mSpotsDialog.setMessage("Getting celebrity images ...");
-
-        // Create a new folder in which to store the new images.
-        File celebFolder = new File(getApplicationContext().getFilesDir(), CELEB_IMAGES_FOLDER);
-        if (celebFolder.exists()) {
-            celebFolder.delete();
-        }
-        celebFolder.mkdirs();
-
-
-        int i = 0;
-        for (String imageURL : celebURLs) {
-            try {
-                URL url = new URL(imageURL);
-                HttpURLConnection urlConnection = (HttpURLConnection) url.openConnection();
-                urlConnection.connect();
-
-                InputStream inputStream = urlConnection.getInputStream();
-                Bitmap celebImage = BitmapFactory.decodeStream(inputStream);
-
-                String imageName = celebNames.get(i++);
-
-                File celeb = new File(celebFolder, imageName);
-
-                FileOutputStream fout = new FileOutputStream(celeb);
-                celebImage.compress(Bitmap.CompressFormat.JPEG, 100, fout);
-                fout.close();
-
-
-            } catch (MalformedURLException e) {
-                e.printStackTrace();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
-            mNotifBuilder.setProgress(0, 0, false)
-                         .setOngoing(false)
-                         .setContentText("Celebrity images are prepared");
-            mNotificationManager.notify(SAVE_IMAGES_NOTIF_ID, mNotifBuilder.build());
-            if (mSpotsDialog.isShowing()) {
-                mSpotsDialog.dismiss();
-            }
-
-            cancelNotifications(5000l, SAVE_IMAGES_NOTIF_ID);
-        }
     }
 
 
@@ -316,10 +334,10 @@ public class MainActivity extends AppCompatActivity {
         return ifImagesLoaded;
     }
 
-
-//
-
-
+    /**
+     * Display a Toast message saying {@code "Cannot read images\nApp will be closing."}.
+     * @param millisDelay time between showing the Toast and finishing the app.
+     */
     private void ToastNoImages(long millisDelay) {
         Toast.makeText(MainActivity.this, "Cannot read images\nApp will be closing.",
                        Toast.LENGTH_LONG).show();
