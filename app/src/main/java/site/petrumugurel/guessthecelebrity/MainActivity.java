@@ -62,7 +62,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     private int     mNoOfCelebsGuessed;
     private int     mNoOfCelebsShowed;
-    private int     mNoOfCelebsForfeited;
     private boolean mIfShowCorrectAnswer;
 
     private Button    mOption1BTN;
@@ -108,11 +107,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         mOption4BTN.setOnClickListener(this);
         mCelebIV = (ImageView) findViewById(R.id.mainA_RL_IV_celebImage);
 
-        mNoOfCelebsShowed = mNoOfCelebsGuessed = mNoOfCelebsForfeited = 0;
+        mNoOfCelebsShowed = mNoOfCelebsGuessed = 0;
         mIfShowCorrectAnswer = false;
 
         ensureAvailableCelebImages();
     }
+
+
 
     /**
      * This is to be called before trying any operation with celeb data.
@@ -184,7 +185,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             buttons[i].setText(mCelebsOnDisk[randomCelebs[i]]);
         }
 
-        // Select one celeb for which to display the image.
+        // Select one celeb for which to display the image from the four random already settled.
         mDisplayedCeleb = mCelebsOnDisk[randomCelebs[mRandom.nextInt(randomCelebs.length)]];
         File imagesPath = new File(
                 getApplicationContext().getFilesDir() + "/" + CELEB_IMAGES_FOLDER);
@@ -233,8 +234,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         }
 
         assert getSupportActionBar() != null;
-        getSupportActionBar().setSubtitle("Score: " + mNoOfCelebsGuessed + " / " + mNoOfCelebsShowed
-                                          + "\t\t\t\t\t\t\t\tForfeited: " + mNoOfCelebsForfeited);
+        getSupportActionBar().setSubtitle
+                ("Score: " + mNoOfCelebsGuessed + " / " + mNoOfCelebsShowed);
 
         startGame();
     }
@@ -518,15 +519,18 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
                     }
                 }).show();
+                break;
 
             case R.id.mainM_I_showAnswer:
                 item.setChecked(!item.isChecked());
                 mIfShowCorrectAnswer = item.isChecked();
+                break;
 
             case R.id.mainM_I_resetScores:
-                mNoOfCelebsShowed = mNoOfCelebsForfeited = mNoOfCelebsGuessed = 0;
+                mNoOfCelebsShowed = mNoOfCelebsGuessed = 0;
                 assert getSupportActionBar() != null;
                 getSupportActionBar().setSubtitle("Once ate a whole bowl of soup");
+                break;
         }
 
         return true;    // we've handled the press, don't want other listeners check for it
@@ -547,7 +551,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     public void onDestroy() {
         cancelNotifications(0l, DOWNLOAD_NOTIF_ID, SAVE_IMAGES_NOTIF_ID);
-
         super.onDestroy();
     }
 
